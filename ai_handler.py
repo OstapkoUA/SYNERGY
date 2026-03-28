@@ -1,8 +1,6 @@
 import json
 import os
-import asyncio
 from pathlib import Path
-import putergenai as puter
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 BASE_DIR = Path(__file__).parent
@@ -10,8 +8,6 @@ ADMINS_FILE = BASE_DIR / "admins.json"
 
 with open(ADMINS_FILE, 'r', encoding='utf-8') as f:
     ADMS_DATA = json.load(f)
-
-puter_client = puter.PuterClient()
 
 SYSTEM_PROMPT = """Ти - дружній адміністратор салону краси SYNERGY. 
 Твоя роль - допомогти клієнту записатися на послугу.
@@ -30,14 +26,9 @@ class AIHandler:
         self.ai_history[user_id].append({"role": "user", "content": message})
         
         try:
-            response = puter_client.ai_chat(
-                model="openai/gpt-5-nano",
-                messages=self.ai_history[user_id]
-            )
-            self.ai_history[user_id].append({"role": "assistant", "content": response})
-            return response
+            return None
         except Exception as e:
-            return f"Виникла помилка: {str(e)}"
+            return None
     
     def clear_ai_history(self, user_id):
         if user_id in self.ai_history:
