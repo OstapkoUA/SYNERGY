@@ -1,0 +1,16 @@
+{
+  "name": "synergy-bot",
+  "version": "1.0.0",
+  "description": "SYNERGY Beauty Studio Telegram Bot",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node web.js",
+    "dev": "node bot.js"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.64.0",
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.0",
+    "express": "^4.18.2"
+  }
+}

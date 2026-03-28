@@ -1,7 +1,6 @@
 import logging
 import os
 import json
-import asyncio
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
@@ -1366,14 +1365,11 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CallbackQueryHandler(ai_button_handler))
     
-    return app
-
-
-def run_bot():
     print("SYNERGY Bot started!")
-    app = main()
+    
+    const port = process.env.PORT || 10000;
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
-    run_bot()
+    main()
