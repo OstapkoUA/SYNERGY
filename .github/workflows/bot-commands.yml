@@ -1,0 +1,38 @@
+name: Bot Commands
+
+on:
+  repository_dispatch:
+
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'Bot command to run'
+        required: true
+        default: 'status'
+        type: choice
+        options:
+          - status
+          - restart
+          - logs
+
+jobs:
+  bot-command:
+    name: Execute Bot Command
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute command via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script: |
+            cd /opt/synergy-bot
+            if [ "${{ inputs.command }}" = "status" ]; then
+              pm2 status
+            elif [ "${{ inputs.command }}" = "restart" ]; then
+              pm2 restart synergy-bot
+            elif [ "${{ inputs.command }}" = "logs" ]; then
+              pm2 logs synergy-bot --lines 50
+            fi
