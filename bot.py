@@ -1366,37 +1366,14 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CallbackQueryHandler(ai_button_handler))
     
+    return app
+
+
+def run_bot():
     print("SYNERGY Bot started!")
-    
-    import aiohttp
-    from aiohttp import web
-    
-    async def health_check(request):
-        return web.Response(text="OK")
-    
-    async def run():
-        app_runner = None
-        try:
-            await app.initialize()
-            await app.start()
-            
-            port = int(os.getenv("PORT", 8080))
-            site = web.TCPSite(app, '0.0.0.0', port)
-            await site.start()
-            
-            print(f"Bot running on port {port}")
-            
-            while True:
-                await asyncio.sleep(3600)
-        except Exception as e:
-            print(f"Error: {e}")
-        finally:
-            if app_runner:
-                await app_runner.cleanup()
-    
-    import asyncio
-    asyncio.run(run())
+    app = main()
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
-    main()
+    run_bot()
