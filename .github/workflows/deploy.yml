@@ -35,3 +35,10 @@ jobs:
             tar -xzf deploy.tar.gz
             npm install --production
             pm2 restart synergy-bot || pm2 start npm --name synergy-bot -- start
+
+      - name: Notify Vercel
+        uses: vercel/repository-dispatch/actions/status@v1
+        with:
+          token: ${{ secrets.VERCEL_TOKEN }}
+          deploymentId: ${{ secrets.VERCEL_DEPLOYMENT_ID }}
+          status: ${{ job.status }}
