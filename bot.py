@@ -874,46 +874,46 @@ async def ai_enter_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     admins_data = get_admins_data()
     services = admins_data["services"].get(service_key, [])
+    
+    found_services = []
+    for i, service in enumerate(services):
+        service_name = service["name"].lower()
+        words = service_input.split()
+        for word in words:
+            if len(word) > 2 and word in service_name:
+                found_services.append({"index": i, **service})
+                break
+    
+    if found_services:
+        context.user_data["service_index"] = found_services[0]["index"]
+        context.user_data["selected_service"] = found_services[0]["name"]
+        context.user_data["selected_service_data"] = found_services[0]
+        context.user_data["ai_step"] = "ask_questions"
         
-        found_services = []
-        for i, service in enumerate(services):
-            service_name = service["name"].lower()
-            words = service_input.split()
-            for word in words:
-                if len(word) > 2 and word in service_name:
-                    found_services.append({"index": i, **service})
-                    break
+        keyboard = [
+            [InlineKeyboardButton("Продовжити", callback_data="ai_no_questions")],
+        ]
         
-        if found_services:
-            context.user_data["service_index"] = found_services[0]["index"]
-            context.user_data["selected_service"] = found_services[0]["name"]
-            context.user_data["selected_service_data"] = found_services[0]
-            context.user_data["ai_step"] = "ask_questions"
-            
-            keyboard = [
-                [InlineKeyboardButton("Продовжити", callback_data="ai_no_questions")],
-            ]
-            
-            await update.message.reply_text(
-                f"✅ <b>Знайдено:</b>\n\n"
-                f"Послуга: <b>{found_services[0]['name']}</b>\n"
-                f"Час: {found_services[0]['time']}\n"
-                f"Ціна: {found_services[0]['price']}\n\n"
-                "<i>Чи є у вас якісь питання щодо лазерної епіляції?</i>\n\n"
-                "Натисніть 'Продовжити' щоб рухатись далі, або напишіть своє питання.",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.HTML
-            )
-            return ENTER_NAME
-        else:
-            service_list = "\n".join([f"• {s['name']}" for s in services[:15]])
-            await update.message.reply_text(
-                f"❌ Послугу не знайдено.\n\n"
-                f"Ось доступні послуги:\n{service_list}\n\n"
-                "Напишіть назву з списку вище:",
-                parse_mode=ParseMode.HTML
-            )
-            return ENTER_NAME
+        await update.message.reply_text(
+            f"✅ <b>Знайдено:</b>\n\n"
+            f"Послуга: <b>{found_services[0]['name']}</b>\n"
+            f"Час: {found_services[0]['time']}\n"
+            f"Ціна: {found_services[0]['price']}\n\n"
+            "<i>Чи є у вас якісь питання щодо лазерної епіляції?</i>\n\n"
+            "Натисніть 'Продовжити' щоб рухатись далі, або напишіть своє питання.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+        return ENTER_NAME
+    else:
+        service_list = "\n".join([f"• {s['name']}" for s in services[:15]])
+        await update.message.reply_text(
+            f"❌ Послугу не знайдено.\n\n"
+            f"Ось доступні послуги:\n{service_list}\n\n"
+            "Напишіть назву з списку вище:",
+            parse_mode=ParseMode.HTML
+        )
+        return ENTER_NAME
     
     if ai_step == "ask_questions":
         lower_msg = user_message.lower()
