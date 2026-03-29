@@ -39,6 +39,7 @@ jobs:
       - name: Notify Vercel
         uses: vercel/repository-dispatch/actions/status@v1
         with:
+          name: Vercel - synergy: Ipv4
           token: ${{ secrets.VERCEL_TOKEN }}
           deploymentId: ${{ secrets.VERCEL_DEPLOYMENT_ID }}
           status: ${{ job.status }}
