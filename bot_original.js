@@ -74,76 +74,6 @@ async function answerAI(question, category) {
     return 'Для детальної інформації зателефонуйте нам! 📞 ' + data.contact.phone;
 }
 
-async function matchLaserZones(userText, gender) {
-    const services = adminsData.services[`laser_${gender}`] || [];
-    const userLower = userText.toLowerCase();
-    
-    const keywordMap = {
-        'пахв': [0, 3],
-        'підпах': [0, 3],
-        'бікіні': [14, 15, 16],
-        'глибок': [16],
-        'ноги': [11, 12],
-        'ног': [11, 12],
-        'стегн': [23, 63],
-        'гомілк': [10, 11],
-        'руки': [6, 7],
-        'рук': [6, 7],
-        'плеч': [1, 6],
-        'живіт': [5],
-        'поперек': [2],
-        'сідниц': [8, 9],
-        'шия': [17],
-        'обличч': [18, 19, 20, 21, 22],
-        'верхня губ': [21, 22],
-        'губа': [21, 22],
-        'підборідд': [20, 21],
-        'декольт': [4],
-        'груди': [4],
-        'ореол': [3],
-        'криж': [2],
-        '全部': [25, 26]
-    };
-    
-    let matchedIndices = new Set();
-    for (const [keyword, indices] of Object.entries(keywordMap)) {
-        if (userLower.includes(keyword)) {
-            indices.forEach(i => matchedIndices.add(i));
-        }
-    }
-    
-    if (matchedIndices.size > 0) {
-        return Array.from(matchedIndices).slice(0, 5).map(i => ({
-            index: i,
-            name: services[i]?.name,
-            price: services[i]?.price,
-            time: services[i]?.time
-        })).filter(m => m.name);
-    }
-    
-    const servicesList = services.map((s, i) => `${i}. ${s.name}`).join('\n');
-    
-    const prompt = `Ти - помічник у салоні лазерної епіляції. 
-Користувач написав: "${userText}"
-Доступні послуги (індекс - назва):
-${servicesList}
-
-Вибери 3-5 найбільш підходящих індексів. Відповідь ТІЛЬКИ масивом JSON: [0, 5, 12]`;
-
-    const response = await callGemini(prompt);
-    console.log('AI zones response:', response);
-    if (!response) return null;
-    
-    try {
-        let cleanResponse = response.replace(/```json|```/g, '').replace(/\[|\]/g, '').trim();
-        const indices = cleanResponse.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
-        return indices.map(i => ({ index: i, name: services[i]?.name, price: services[i]?.price, time: services[i]?.time })).filter(m => m.name);
-    } catch (e) {
-        console.log('Failed to parse AI response:', response, e);
-        return null;
-    }
-}
-
 async function createAltegioBooking(name, phone, serviceId, staffId, datetime) {
     if (!ALTEGIO_API_KEY) return { success: false, error: 'No API key' };
     try {
@@ -383,23 +313,6 @@ bot.on('callback_query', async (query) => {
     
     if (dataCB === 'laser_woman' || dataCB === 'laser_man') {
         const gender = dataCB.replace('laser_', '');
-        userSessions[chatId].gender = gender;
-        userSessions[chatId].step = 'laser_enter_zones';
-        
-        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\n🔍 Напишіть, які зони ви хочете епілювати:\n\n<i>Наприклад: пахви, бікіні, ноги</i>',
-            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
-              reply_markup: {
-                  inline_keyboard: [
-                      [{ text: '📋 Обрати зі списку', callback_data: `laser_pick_${gender}` }],
-                      [{ text: '🔙 Назад', callback_data: 'cat_laser' }]
-                  ]
-              }
-            });
-        return;
-    }
-    
-    if (dataCB.startsWith('laser_pick_')) {
-        const gender = dataCB.replace('laser_pick_', '');
         userSessions[chatId].gender = gender;
         userSessions[chatId].step = 'laser_service';
         showLaserServices(chatId, messageId, gender);
@@ -658,50 +571,6 @@ bot.on('message', async (msg) => {
                   }
                 });
         }
-        return;
-    }
-    
-    // ============ LASER ZONES INPUT ============
-    
-    if (session.step === 'laser_enter_zones') {
-        const gender = session.gender || 'woman';
-        
-        bot.sendMessage(chatId, '🔍 Аналізую ваш запит...', { parse_mode: 'HTML' });
-        
-        const matches = await matchLaserZones(text, gender);
-        
-        if (!matches || matches.length === 0) {
-            bot.sendMessage(chatId, '😕 На жаль, не вдалося знайти відповідні зони. Спробуйте обрати зі списку:',
-                { parse_mode: 'HTML',
-                  reply_markup: {
-                      inline_keyboard: [
-                          [{ text: '📋 Обрати зі списку', callback_data: `laser_pick_${gender}` }],
-                          [{ text: '🔙 Назад', callback_data: 'cat_laser' }]
-                      ]
-                  }
-                });
-            return;
-        }
-        
-        const services = adminsData.services[`laser_${gender}`] || [];
-        
-        let msgText = '🔍 <b>Знайдено відповідні зони:</b>\n\n';
-        const keyboard = [];
-        
-        matches.forEach((m, i) => {
-            const service = services[m.index];
-            if (service) {
-                msgText += `${i + 1}. <b>${service.name}</b>\n   💰 ${service.price}  |  ⏱ ${service.time}\n\n`;
-                keyboard.push([{ text: `${service.name}`, callback_data: `laser_s_${gender}_${m.index}` }]);
-            }
-        });
-        
-        keyboard.push([{ text: '📋 Показати всі зони', callback_data: `laser_pick_${gender}` }]);
-        keyboard.push([{ text: '🔙 Назад', callback_data: 'cat_laser' }]);
-        
-        bot.sendMessage(chatId, msgText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
-        
-        session.step = 'laser_service';
         return;
     }
     
