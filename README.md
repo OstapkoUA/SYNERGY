@@ -1,38 +1,43 @@
-# SYNERGY Telegram Bot
+##SYNERGY Telegram Bot
+Telegram bot for the SYNERGY beauty and wellness studio!
 
-Телеграм-бот для студії краси та здоров'я SYNERGY!
+##Features
+📅 Booking via Altegio
 
-## Функції
-- 📅 Запис через Altegio
-- 💆 Послуги та ціни
-- 👩‍⚕️ Каталог спеціалістів
-- ⭐ Відгуки клієнтів
-- 📝 Залишення даних (coming soon)
-- ℹ️ Інформація про студію
+💆 Services and pricing
 
-## Встановлення
+👩‍⚕️ Specialist catalog
 
-```bash
+⭐ Client reviews
+
+📝 Data submission (coming soon)
+
+ℹ️ Studio information
+
+##Installation
+Bash
 pip install -r requirements.txt
-python bot.py
-```
+node bot.js
+Commands
+/start - Main menu
 
-## Команди
-- `/start` - Головне меню
-- `/book` - Швидкий запис
+/book - Quick booking
 
-## Налаштування
-Відредагуйте `.env` файл:
+##Configuration
+Edit the .env file:
 ```
 BOT_TOKEN=your_telegram_bot_token
 ALTEGIO_BOOKING_URL=your_altegio_link
+OPENAI_API_KEY=your_openai_api_key
+GEMINI_API_KEY=your_gemini_api_key
 ```
+You can use either OpenAI or Gemini.
 
-## Структура файлів
+##File Structure
 ```
-├── bot.py          # Основний код бота
-├── config.py       # Конфігурація
-├── services.json   # Дані про послуги
-├── requirements.txt # Залежності
-└── .env           # Токени та посилання
+├── bot.js           # Main bot code
+├── config.js        # Configuration
+├── services.json    # Service data
+├── requirements.txt # Dependencies
+└── .env             # Tokens and links
 ```
