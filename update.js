@@ -1,25 +1,29 @@
-import re
+const fs = require('fs');
+const path = require('path');
 
-with open('bot.js.bak', 'r', encoding='utf-8') as f:
-    code = f.read()
+const BOT_FILE = 'bot.js';
+const BACKUP_FILE = 'bot.js.bak';
 
-search_funcs = '''
+function updateBot() {
+    let code = fs.readFileSync(BOT_FILE, 'utf8');
+    
+    const searchFuncs = `
 
 function searchServicesAI(query, serviceKey) {
     const services = adminsData.services[serviceKey] || [];
     if (services.length === 0) return Promise.resolve([]);
     
-    const serviceNames = services.map(s => s.name).join('\n- ');
-    const prompt = `Користувач хоче: "${query}". 
+    const serviceNames = services.map(s => s.name).join('\\n- ');
+    const prompt = \`Користувач хоче: "\${query}". 
 Знайди найкращі послуги з цього списку:
-- ${serviceNames}
+- \${serviceNames}
 Відповідь JSON масивом індексів (до 5), например: [0,3,5]
-Тільки JSON, без текста.`;
+Тільки JSON, без текста.\`;
 
     return callGemini(prompt).then(response => {
         try {
             const text = response || '';
-            const indices = JSON.parse(text.replace(/[^\[\]0-9,]/g, ''));
+            const indices = JSON.parse(text.replace(/[^\\[\\]0-9,]/g, ''));
             return indices.filter(i => i >= 0 && i < services.length).map(i => ({ service: services[i], idx: i, score: 10 }));
         } catch (e) {
             return fallbackSearch(query, services);
@@ -29,7 +33,7 @@ function searchServicesAI(query, serviceKey) {
 
 function fallbackSearch(query, services) {
     const lowerQuery = query.toLowerCase().trim();
-    const keywords = lowerQuery.split(/[\s,]+/).filter(w => w.length > 1);
+    const keywords = lowerQuery.split(/[\\s,]+/).filter(w => w.length > 1);
     return services.map((s, idx) => {
         const name = s.name.toLowerCase();
         let score = 0;
@@ -46,7 +50,7 @@ function showSearchResults(chatId, results, serviceKey) {
     keyboard.push([{ text: '📋 Показати всі', callback_data: 'show_all' }]);
     keyboard.push([{ text: '🔍 Новий пошук', callback_data: 'new_search' }]);
     keyboard.push([{ text: '❓ Задати питання', callback_data: 'ask_ai' }]);
-    const msg = results.length > 0 ? '🔍 Знайдено:\n\nОберіть процедуру:' : '❌ Нічого не знайдено.\n\nСпробуйте інший запит:';
+    const msg = results.length > 0 ? '🔍 Знайдено:\\n\\nОберіть процедуру:' : '❌ Нічого не знайдено.\\n\\nСпробуйте інший запит:';
     try { bot.sendMessage(chatId, msg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } }); }
     catch (e) { console.log('Error:', e.message); }
 }
@@ -60,7 +64,7 @@ function showAllServices(chatId, serviceKey) {
     keyboard.push([{ text: '🔍 Пошук', callback_data: 'new_search' }]);
     keyboard.push([{ text: '❓ Задати питання', callback_data: 'ask_ai' }]);
     const categoryNames = { laser_woman: '💆 Лазерна Епіляція', laser_man: '💆 Лазерна Епіляція', cosmetology: '💄 Косметологія', massage: '💆 Масаж', aquasphera: '🌊 Ендосфера' };
-    const msg = (categoryNames[serviceKey] || 'Послуги') + '\n\nОберіть процедуру:';
+    const msg = (categoryNames[serviceKey] || 'Послуги') + '\\n\\nОберіть процедуру:';
     try { bot.sendMessage(chatId, msg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } }); }
     catch (e) { console.log('Error:', e.message); }
 }
@@ -69,7 +73,7 @@ function askForService(chatId, serviceKey) {
     const categoryNames = { laser_woman: '💆 Лазерна Епіляція', laser_man: '💆 Лазерна Епіляція', cosmetology: '💄 Косметологія', massage: '💆 Масаж', aquasphera: '🌊 Ендосфера' };
     const catName = categoryNames[serviceKey] || 'Послуги';
     try {
-        bot.sendMessage(chatId, catName + '\n\nНа яких ділянках хотіли б зробити процедуру?\n<i>Наприклад: пахви, бікіні, ноги...</i>', 
+        bot.sendMessage(chatId, catName + '\\n\\nНа яких ділянках хотіли б зробити процедуру?\\n<i>Наприклад: пахви, бікіні, ноги...</i>', 
             { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
                 [{ text: '📋 Показати всі', callback_data: 'show_all' }],
                 [{ text: '❓ Задати питання', callback_data: 'ask_ai' }],
@@ -78,18 +82,20 @@ function askForService(chatId, serviceKey) {
     } catch (e) { console.log('Error:', e.message); }
 }
 
-'''
+`;
 
-code = code.replace('// ==================== COMMAND HANDLERS', search_funcs + '// ==================== COMMAND HANDLERS')
+    code = code.replace('// ==================== COMMAND HANDLERS', searchFuncs + '// ==================== COMMAND HANDLERS');
 
-# laser_woman/laser_man
-old = "if (dataCB === 'laser_woman' || dataCB === 'laser_man') {\n        const gender = dataCB.replace('laser_', '');\n        userSessions[chatId].gender = gender;\n        userSessions[chatId].step = 'laser_service';\n        showLaserServices(chatId, messageId, gender);\n        return;\n    }"
-new = "if (dataCB === 'laser_woman' || dataCB === 'laser_man') {\n        const gender = dataCB.replace('laser_', '');\n        userSessions[chatId].gender = gender;\n        userSessions[chatId].serviceKey = 'laser_' + gender;\n        userSessions[chatId].step = 'search_services';\n        askForService(chatId, 'laser_' + gender);\n        return;\n    }"
-code = code.replace(old, new)
+    // laser_woman/laser_man
+    code = code.replace(
+        "if (dataCB === 'laser_woman' || dataCB === 'laser_man') {\n        const gender = dataCB.replace('laser_', '');\n        userSessions[chatId].gender = gender;\n        userSessions[chatId].step = 'laser_service';\n        showLaserServices(chatId, messageId, gender);\n        return;\n    }",
+        "if (dataCB === 'laser_woman' || dataCB === 'laser_man') {\n        const gender = dataCB.replace('laser_', '');\n        userSessions[chatId].gender = gender;\n        userSessions[chatId].serviceKey = 'laser_' + gender;\n        userSessions[chatId].step = 'search_services';\n        askForService(chatId, 'laser_' + gender);\n        return;\n    }"
+    );
 
-# search message handler
-old = "// ============ LASER TYPE QUESTION (user types diode or alex) ============"
-new = '''// ============ SEARCH SERVICES ============
+    // search message handler
+    code = code.replace(
+        "// ============ LASER TYPE QUESTION (user types diode or alex) ============",
+        `// ============ SEARCH SERVICES ============
     if (session.step === 'search_services') {
         searchServicesAI(text, session.serviceKey).then(results => {
             showSearchResults(chatId, results, session.serviceKey);
@@ -97,12 +103,13 @@ new = '''// ============ SEARCH SERVICES ============
         return;
     }
     
-    // ============ LASER TYPE QUESTION (user types diode or alex) ============'''
-code = code.replace(old, new)
+    // ============ LASER TYPE QUESTION (user types diode or alex) ============`
+    );
 
-# show_all, new_search, svc_ handlers
-old = "// ============ LASER CATEGORY ============"
-new = '''// ============ SEARCH & SERVICES ============
+    // show_all, new_search, svc_ handlers
+    code = code.replace(
+        "// ============ LASER CATEGORY ============",
+        `// ============ SEARCH & SERVICES ============
     if (dataCB === 'show_all') {
         showAllServices(chatId, session?.serviceKey || 'laser_woman');
         return;
@@ -129,23 +136,34 @@ new = '''// ============ SEARCH & SERVICES ============
         const keyboard = workers.map(w => [{ text: w.name, callback_data: 'worker_' + w.id }]);
         keyboard.push([{ text: '❓ Задати питання', callback_data: 'ask_ai' }]);
         keyboard.push([{ text: '🔙 Інша процедура', callback_data: 'new_search' }]);
-        bot.editMessageText('✅ <b>' + service.name + '</b>\n💰 ' + service.price + '\n⏱ ' + service.time + '\n\nОберіть спеціаліста:', { chat_id: chatId, message_id: messageId, parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
+        bot.editMessageText('✅ <b>' + service.name + '</b>\\n💰 ' + service.price + '\\n⏱ ' + service.time + '\\n\\nОберіть спеціаліста:', { chat_id: chatId, message_id: messageId, parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
         return;
     }
     
-    // ============ LASER CATEGORY ============'''
-code = code.replace(old, new)
+    // ============ LASER CATEGORY ============`
+    );
 
-# cosmetology
-old = "if (dataCB === 'cat_cosmetology') {\n        userSessions[chatId] = { category: 'cosmetology', step: 'cosmetology_service' };\n        showCosmetologyServices(chatId, messageId);\n        return;\n    }"
-new = "if (dataCB === 'cat_cosmetology') {\n        userSessions[chatId] = { category: 'cosmetology', serviceKey: 'cosmetology', step: 'search_services' };\n        askForService(chatId, 'cosmetology');\n        return;\n    }"
-code = code.replace(old, new)
+    // cosmetology
+    code = code.replace(
+        "if (dataCB === 'cat_cosmetology') {\n        userSessions[chatId] = { category: 'cosmetology', step: 'cosmetology_service' };\n        showCosmetologyServices(chatId, messageId);\n        return;\n    }",
+        "if (dataCB === 'cat_cosmetology') {\n        userSessions[chatId] = { category: 'cosmetology', serviceKey: 'cosmetology', step: 'search_services' };\n        askForService(chatId, 'cosmetology');\n        return;\n    }"
+    );
 
-# massage
-old = "if (dataCB === 'cat_massage') {\n        userSessions[chatId] = { category: 'massage', step: 'massage_service' };\n        showMassageServices(chatId, messageId);\n        return;\n    }"
-new = "if (dataCB === 'cat_massage') {\n        userSessions[chatId] = { category: 'massage', serviceKey: 'massage', step: 'search_services' };\n        askForService(chatId, 'massage');\n        return;\n    }"
-code = code.replace(old, new)
+    // massage
+    code = code.replace(
+        "if (dataCB === 'cat_massage') {\n        userSessions[chatId] = { category: 'massage', step: 'massage_service' };\n        showMassageServices(chatId, messageId);\n        return;\n    }",
+        "if (dataCB === 'cat_massage') {\n        userSessions[chatId] = { category: 'massage', serviceKey: 'massage', step: 'search_services' };\n        askForService(chatId, 'massage');\n        return;\n    }"
+    );
 
-# aquasphera
-old = "if (dataCB === 'cat_aquasphera') {\n        userSessions[chatId] = { category: 'aquasphera', step: 'aquasphera_service' };\n        showAquaspheraServices(chatId, messageId);\n        return;\n    }"
-new = "if (dat
+    // aquasphera
+    code = code.replace(
+        "if (dataCB === 'cat_aquasphera') {\n        userSessions[chatId] = { category: 'aquasphera', step: 'aquasphera_service' };\n        showAquaspheraServices(chatId, messageId);\n        return;\n    }",
+        "if (dataCB === 'cat_aquasphera') {\n        userSessions[chatId] = { category: 'aquasphera', serviceKey: 'aquasphera', step: 'search_services' };\n        askForService(chatId, 'aquasphera');\n        return;\n    }"
+    );
+
+    // Write updated code
+    fs.writeFileSync(BOT_FILE, code, 'utf8');
+    console.log('✅ bot.js updated successfully!');
+}
+
+updateBot();

@@ -74,76 +74,6 @@ async function answerAI(question, category) {
     return 'Для детальної інформації зателефонуйте нам! 📞 ' + data.contact.phone;
 }
 
-async function matchLaserZones(userText, gender) {
-    const services = adminsData.services[`laser_${gender}`] || [];
-    const userLower = userText.toLowerCase();
-    
-    const keywordMap = {
-        'пахв': [0, 3],
-        'підпах': [0, 3],
-        'бікіні': [14, 15, 16],
-        'глибок': [16],
-        'ноги': [11, 12],
-        'ног': [11, 12],
-        'стегн': [23, 63],
-        'гомілк': [10, 11],
-        'руки': [6, 7],
-        'рук': [6, 7],
-        'плеч': [1, 6],
-        'живіт': [5],
-        'поперек': [2],
-        'сідниц': [8, 9],
-        'шия': [17],
-        'обличч': [18, 19, 20, 21, 22],
-        'верхня губ': [21, 22],
-        'губа': [21, 22],
-        'підборідд': [20, 21],
-        'декольт': [4],
-        'груди': [4],
-        'ореол': [3],
-        'криж': [2],
-        '全部': [25, 26]
-    };
-    
-    let matchedIndices = new Set();
-    for (const [keyword, indices] of Object.entries(keywordMap)) {
-        if (userLower.includes(keyword)) {
-            indices.forEach(i => matchedIndices.add(i));
-        }
-    }
-    
-    if (matchedIndices.size > 0) {
-        return Array.from(matchedIndices).slice(0, 5).map(i => ({
-            index: i,
-            name: services[i]?.name,
-            price: services[i]?.price,
-            time: services[i]?.time
-        })).filter(m => m.name);
-    }
-    
-    const servicesList = services.map((s, i) => `${i}. ${s.name}`).join('\n');
-    
-    const prompt = `Ти - помічник у салоні лазерної епіляції. 
-Користувач написав: "${userText}"
-Доступні послуги (індекс - назва):
-${servicesList}
-
-Вибери 3-5 найбільш підходящих індексів. Відповідь ТІЛЬКИ масивом JSON: [0, 5, 12]`;
-
-    const response = await callGemini(prompt);
-    console.log('AI zones response:', response);
-    if (!response) return null;
-    
-    try {
-        let cleanResponse = response.replace(/```json|```/g, '').replace(/\[|\]/g, '').trim();
-        const indices = cleanResponse.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
-        return indices.map(i => ({ index: i, name: services[i]?.name, price: services[i]?.price, time: services[i]?.time })).filter(m => m.name);
-    } catch (e) {
-        console.log('Failed to parse AI response:', response, e);
-        return null;
-    }
-}
-
 async function createAltegioBooking(name, phone, serviceId, staffId, datetime) {
     if (!ALTEGIO_API_KEY) return { success: false, error: 'No API key' };
     try {
@@ -183,6 +113,10 @@ bot.on('callback_query', async (query) => {
     const dataCB = query.data;
     
     await bot.answerCallbackQuery(query.id);
+    
+    if (!userSessions[chatId]) {
+        userSessions[chatId] = {};
+    }
     
     const session = userSessions[chatId];
     
@@ -302,15 +236,43 @@ bot.on('callback_query', async (query) => {
     // ============ LASER CATEGORY ============
     
     if (dataCB === 'cat_laser') {
-        userSessions[chatId] = { category: 'laser', step: 'laser_exp' };
-        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\nВи раніше робили лазерну епіляцію?',
+        userSessions[chatId] = { category: 'laser', step: 'laser_offer' };
+        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\nВас зацікавила наша спеціальна пропозиція на лазерну епіляцію?',
             { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
               reply_markup: {
                   inline_keyboard: [
-                      [{ text: '✅ Так', callback_data: 'laser_exp_yes' }],
-                      [{ text: '❌ Ні, вперше', callback_data: 'laser_exp_no' }],
-                      [{ text: '❓ Задати питання', callback_data: 'ask_ai' }],
+                      [{ text: '✅ Так', callback_data: 'laser_offer_yes' }],
                       [{ text: '🔙 Назад', callback_data: 'start_booking' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'laser_offer_yes') {
+        userSessions[chatId].step = 'laser_self_gift';
+        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\nПідкажіть, ви для себе обираєте чи в подарунок?',
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      [{ text: '👤 Для себе', callback_data: 'laser_self' }],
+                      [{ text: '🎁 В подарунок', callback_data: 'laser_gift' }],
+                      [{ text: '🔙 Назад', callback_data: 'cat_laser' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'laser_self' || dataCB === 'laser_gift') {
+        userSessions[chatId].step = 'laser_exp';
+        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\nЧи робили Ви раніше лазерну епіляцію на олександритовому лазері чи це ваш перший досвід?',
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      [{ text: '✅ Так, робила', callback_data: 'laser_exp_yes' }],
+                      [{ text: '❌ Ні, вперше', callback_data: 'laser_exp_no' }],
+                      [{ text: '🔙 Назад', callback_data: 'laser_self' }]
                   ]
               }
             });
@@ -319,30 +281,13 @@ bot.on('callback_query', async (query) => {
     
     if (dataCB === 'laser_exp_yes') {
         userSessions[chatId].step = 'laser_type';
-        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\nЧудово! Ви робили на діодному чи олександритовому лазері?',
+        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\nНа якому лазері робили?',
             { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
               reply_markup: {
                   inline_keyboard: [
                       [{ text: '🔴 Діодний', callback_data: 'laser_diode' }],
                       [{ text: '💎 Олександритовий', callback_data: 'laser_alex' }],
-                      [{ text: '❓ Задати питання', callback_data: 'ask_ai' }],
-                      [{ text: '🔙 Назад', callback_data: 'cat_laser' }]
-                  ]
-              }
-            });
-        return;
-    }
-    
-    if (dataCB === 'laser_exp_no') {
-        userSessions[chatId].step = 'laser_gender';
-        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\nОлександритовий лазер DEKA Moveo - ефективний та безболісний метод!\n\nОберіть стать:',
-            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
-              reply_markup: {
-                  inline_keyboard: [
-                      [{ text: '👩 Жінка', callback_data: 'laser_woman' }],
-                      [{ text: '👨 Чоловік', callback_data: 'laser_man' }],
-                      [{ text: '❓ Задати питання', callback_data: 'ask_ai' }],
-                      [{ text: '🔙 Назад', callback_data: 'cat_laser' }]
+                      [{ text: '🔙 Назад', callback_data: 'laser_exp' }]
                   ]
               }
             });
@@ -351,14 +296,13 @@ bot.on('callback_query', async (query) => {
     
     if (dataCB === 'laser_diode') {
         userSessions[chatId].step = 'laser_gender';
-        bot.editMessageText('💆 <b>Діодний vs Олександритовий</b>\n\nНаш олександритовий DEKA Moveo кращий:\n• Швидший результат\n• Менше процедур\n• Працює на всіх типах шкіри\n• Безболісний\n\nОберіть стать:',
+        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\nРозуміємо! Результат залежить від апарату, правильно підібраних параметрів та індивідуальних особливостей.\n\nНаш олександритовий DEKA Moveo дає кращий результат:\n• Швидший ефект\n• Менше процедур\n• Безболісний\n\nОберіть стать:',
             { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
               reply_markup: {
                   inline_keyboard: [
                       [{ text: '👩 Жінка', callback_data: 'laser_woman' }],
                       [{ text: '👨 Чоловік', callback_data: 'laser_man' }],
-                      [{ text: '❓ Задати питання', callback_data: 'ask_ai' }],
-                      [{ text: '🔙 Назад', callback_data: 'cat_laser' }]
+                      [{ text: '🔙 Назад', callback_data: 'laser_exp_yes' }]
                   ]
               }
             });
@@ -367,14 +311,28 @@ bot.on('callback_query', async (query) => {
     
     if (dataCB === 'laser_alex') {
         userSessions[chatId].step = 'laser_gender';
-        bot.editMessageText('💆 <b>Чудово!</b>\n\nОлександритовий лазер - найкращий вибір!\n\nОберіть стать:',
+        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\nЧудово! Ви вже знаєте переваги олександритового лазера!\n\nОберіть стать:',
             { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
               reply_markup: {
                   inline_keyboard: [
                       [{ text: '👩 Жінка', callback_data: 'laser_woman' }],
                       [{ text: '👨 Чоловік', callback_data: 'laser_man' }],
-                      [{ text: '❓ Задати питання', callback_data: 'ask_ai' }],
-                      [{ text: '🔙 Назад', callback_data: 'cat_laser' }]
+                      [{ text: '🔙 Назад', callback_data: 'laser_exp_yes' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'laser_exp_no') {
+        userSessions[chatId].step = 'laser_gender';
+        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\nЧудово! Ми працюємо на олександритовому італійському лазері DEKA Moveo - процедури безболісні та ефективні. 99% клієнтів обирають його, бо втомились терпіти біль!\n\nОберіть стать:',
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      [{ text: '👩 Жінка', callback_data: 'laser_woman' }],
+                      [{ text: '👨 Чоловік', callback_data: 'laser_man' }],
+                      [{ text: '🔙 Назад', callback_data: 'laser_exp' }]
                   ]
               }
             });
@@ -384,25 +342,17 @@ bot.on('callback_query', async (query) => {
     if (dataCB === 'laser_woman' || dataCB === 'laser_man') {
         const gender = dataCB.replace('laser_', '');
         userSessions[chatId].gender = gender;
-        userSessions[chatId].step = 'laser_enter_zones';
+        userSessions[chatId].serviceKey = `laser_${gender}`;
+        userSessions[chatId].step = 'search_services';
         
-        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\n🔍 Напишіть, які зони ви хочете епілювати:\n\n<i>Наприклад: пахви, бікіні, ноги</i>',
+        bot.editMessageText('💆 <b>Лазерна Епіляція</b>\n\nПідкажіть, на яких ділянках ви бажаєте проводити епіляцію?\n\n<i>Наприклад: ноги, пахви, бікіні...</i>',
             { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
               reply_markup: {
                   inline_keyboard: [
-                      [{ text: '📋 Обрати зі списку', callback_data: `laser_pick_${gender}` }],
-                      [{ text: '🔙 Назад', callback_data: 'cat_laser' }]
+                      [{ text: '🔙 Назад', callback_data: 'laser_exp' }]
                   ]
               }
             });
-        return;
-    }
-    
-    if (dataCB.startsWith('laser_pick_')) {
-        const gender = dataCB.replace('laser_pick_', '');
-        userSessions[chatId].gender = gender;
-        userSessions[chatId].step = 'laser_service';
-        showLaserServices(chatId, messageId, gender);
         return;
     }
     
@@ -415,27 +365,216 @@ bot.on('callback_query', async (query) => {
         const service = services[idx];
         if (!service) return;
         
-        userSessions[chatId].serviceIndex = idx;
+        if (!userSessions[chatId].selectedZones) {
+            userSessions[chatId].selectedZones = [];
+        }
+        
+        const existingIndex = userSessions[chatId].selectedZones.findIndex(z => z.index === idx);
+        if (existingIndex === -1) {
+            userSessions[chatId].selectedZones.push({ index: idx, name: service.name, price: service.price, time: service.time });
+        }
+        
         userSessions[chatId].serviceKey = `laser_${gender}`;
-        userSessions[chatId].step = 'laser_worker';
         
-        const workers = adminsData.categories.laser?.workers || [];
-        const keyboard = workers.map(w => 
-            [{ text: `${w.name}`, callback_data: `worker_${w.id}` }]
-        );
-        keyboard.push([{ text: '❓ Задати питання', callback_data: 'ask_ai' }]);
-        keyboard.push([{ text: '🔙 Змінити зону', callback_data: `laser_woman` }]);
+        const selectedZones = userSessions[chatId].selectedZones;
+        let totalPrice = 0;
+        let totalTime = 0;
         
-        bot.editMessageText(`✅ <b>${service.name}</b>\n💰 ${service.price}\n⏱ ${service.time}\n\nОберіть спеціаліста:`,
+        let msgText = '📍 <b>Обрані зони:</b>\n\n';
+        const keyboard = [];
+        
+        selectedZones.forEach((z, i) => {
+            msgText += `${i + 1}. ${z.name} - ${z.price}\n`;
+            totalPrice += parseInt(String(z.price).replace(/\s/g, ''));
+            totalTime += parseInt(z.time);
+            keyboard.push([{ text: `❌ ${z.name}`, callback_data: `laser_remove_${gender}_${i}` }]);
+        });
+        
+        const hours = Math.floor(totalTime / 60);
+        const mins = totalTime % 60;
+        const timeStr = hours > 0 ? `${hours} год ${mins} хв` : `${mins} хв`;
+        
+        msgText += `\n💰 <b>Загальна вартість: ${totalPrice} грн</b>\n⏱ Тривалість: ${timeStr}`;
+        
+        keyboard.push([{ text: '➕ Додати ще зону', callback_data: `laser_pick_${gender}` }]);
+        keyboard.push([{ text: '✅ Продовжити', callback_data: 'laser_zones_done' }]);
+        
+        bot.editMessageText(msgText,
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
+        return;
+    }
+    
+    if (dataCB.startsWith('laser_remove_')) {
+        const parts = dataCB.split('_');
+        const idx = parseInt(parts[3]);
+        
+        if (userSessions[chatId].selectedZones && userSessions[chatId].selectedZones[idx]) {
+            userSessions[chatId].selectedZones.splice(idx, 1);
+        }
+        
+        const gender = userSessions[chatId].gender;
+        const selectedZones = userSessions[chatId].selectedZones || [];
+        
+        if (selectedZones.length === 0) {
+            bot.editMessageText('📍 <b>Обрані зони:</b>\n\nНічого не обрано',
+                { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+                  reply_markup: { inline_keyboard: [[{ text: '➕ Обрати зони', callback_data: `laser_pick_${gender}` }]] } });
+            return;
+        }
+        
+        let totalPrice = 0;
+        let totalTime = 0;
+        let msgText = '📍 <b>Обрані зони:</b>\n\n';
+        const keyboard = [];
+        
+        selectedZones.forEach((z, i) => {
+            msgText += `${i + 1}. ${z.name} - ${z.price}\n`;
+            totalPrice += parseInt(String(z.price).replace(/\s/g, ''));
+            totalTime += parseInt(z.time);
+            keyboard.push([{ text: `❌ ${z.name}`, callback_data: `laser_remove_${gender}_${i}` }]);
+        });
+        
+        const hours = Math.floor(totalTime / 60);
+        const mins = totalTime % 60;
+        const timeStr = hours > 0 ? `${hours} год ${mins} хв` : `${mins} хв`;
+        
+        msgText += `\n💰 <b>Загальна вартість: ${totalPrice} грн</b>\n⏱ Тривалість: ${timeStr}`;
+        
+        keyboard.push([{ text: '➕ Додати ще зону', callback_data: `laser_pick_${gender}` }]);
+        keyboard.push([{ text: '✅ Продовжити', callback_data: 'laser_zones_done' }]);
+        
+        bot.editMessageText(msgText,
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
+        return;
+    }
+    
+    if (dataCB === 'laser_zones_done') {
+        userSessions[chatId].step = 'laser_upsell';
+        
+        const selectedZones = userSessions[chatId].selectedZones || [];
+        let totalPrice = 0;
+        let totalTime = 0;
+        
+        selectedZones.forEach(z => {
+            totalPrice += parseInt(String(z.price).replace(/\s/g, ''));
+            totalTime += parseInt(z.time);
+        });
+        
+        const hours = Math.floor(totalTime / 60);
+        const mins = totalTime % 60;
+        const timeStr = hours > 0 ? `${hours} год ${mins} хв` : `${mins} хв`;
+        
+        bot.editMessageText(`💆 <b>Вартість даного комплексу: ${totalPrice} грн</b>\n⏱ Тривалість: ${timeStr}\n\nЗазвичай до цих ділянок додають ще руки до ліктя або верхню губу. Забронувати для вас додатковий час на ці ділянки?`,
             { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
-              reply_markup: { inline_keyboard: keyboard } });
+              reply_markup: {
+                  inline_keyboard: [
+                      [{ text: '👋 Руки до ліктя', callback_data: 'laser_upsell_arms' }],
+                      [{ text: '👄 Верхню губу', callback_data: 'laser_upsell_lips' }],
+                      [{ text: '❌ Ні, дякую', callback_data: 'laser_upsell_no' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'laser_upsell_arms') {
+        const gender = userSessions[chatId].gender;
+        const armsIdx = 6;
+        const services = adminsData.services[`laser_${gender}`] || [];
+        const armsService = services[armsIdx];
+        
+        if (armsService && !userSessions[chatId].selectedZones.find(z => z.index === armsIdx)) {
+            userSessions[chatId].selectedZones.push({ index: armsIdx, name: armsService.name, price: armsService.price, time: armsService.time });
+        }
+        
+        const selectedZones = userSessions[chatId].selectedZones || [];
+        let totalPrice = 0;
+        selectedZones.forEach(z => totalPrice += parseInt(String(z.price).replace(/\s/g, '')));
+        
+        bot.editMessageText(`✅ Додано: ${armsService?.name || 'Руки'}\n\n💰 <b>Загальна вартість: ${totalPrice} грн</b>\n\nОберіть спеціаліста:`,
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      ...(adminsData.categories.laser?.workers || []).map(w => 
+                          [{ text: w.name, callback_data: `worker_${w.id}` }]
+                      ),
+                      [{ text: '🔙 Назад', callback_data: 'laser_zones_done' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'laser_upsell_lips') {
+        const gender = userSessions[chatId].gender;
+        const lipsIdx = 21;
+        const services = adminsData.services[`laser_${gender}`] || [];
+        const lipsService = services[lipsIdx];
+        
+        if (lipsService && !userSessions[chatId].selectedZones.find(z => z.index === lipsIdx)) {
+            userSessions[chatId].selectedZones.push({ index: lipsIdx, name: lipsService.name, price: lipsService.price, time: lipsService.time });
+        }
+        
+        const selectedZones = userSessions[chatId].selectedZones || [];
+        let totalPrice = 0;
+        selectedZones.forEach(z => totalPrice += parseInt(String(z.price).replace(/\s/g, '')));
+        
+        bot.editMessageText(`✅ Додано: ${lipsService?.name || 'Верхня губа'}\n\n💰 <b>Загальна вартість: ${totalPrice} грн</b>\n\nОберіть спеціаліста:`,
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      ...(adminsData.categories.laser?.workers || []).map(w => 
+                          [{ text: w.name, callback_data: `worker_${w.id}` }]
+                      ),
+                      [{ text: '🔙 Назад', callback_data: 'laser_zones_done' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'laser_upsell_no') {
+        const selectedZones = userSessions[chatId].selectedZones || [];
+        let totalPrice = 0;
+        selectedZones.forEach(z => totalPrice += parseInt(String(z.price).replace(/\s/g, '')));
+        
+        bot.editMessageText(`💰 <b>Вартість: ${totalPrice} грн</b>\n\nПри оплаті сьогодні у подарунок отримаєте тканинну маску для обличчя! 🎁\n\nОберіть спеціаліста:`,
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      ...(adminsData.categories.laser?.workers || []).map(w => 
+                          [{ text: w.name, callback_data: `worker_${w.id}` }]
+                      ),
+                      [{ text: '🔙 Назад', callback_data: 'laser_zones_done' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB.startsWith('laser_pick_')) {
+        const gender = dataCB.replace('laser_pick_', '');
+        showLaserServices(chatId, messageId, gender);
         return;
     }
     
     // ============ COSMETOLOGY CATEGORY ============
     
     if (dataCB === 'cat_cosmetology') {
-        userSessions[chatId] = { category: 'cosmetology', step: 'cosmetology_service' };
+        userSessions[chatId] = { category: 'cosmetology', serviceKey: 'cosmetology', step: 'search_services' };
+        bot.editMessageText('💄 <b>Косметологія</b>\n\nЯка процедура вас цікавить?\n\n<i>Наприклад: чистка, пілінг, масаж обличчя</i>',
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      [{ text: '📋 Показати всі', callback_data: 'show_all_cosmo' }],
+                      [{ text: '🔙 Назад', callback_data: 'start_booking' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'show_all_cosmo') {
         showCosmetologyServices(chatId, messageId);
         return;
     }
@@ -466,7 +605,20 @@ bot.on('callback_query', async (query) => {
     // ============ MASSAGE CATEGORY ============
     
     if (dataCB === 'cat_massage') {
-        userSessions[chatId] = { category: 'massage', step: 'massage_service' };
+        userSessions[chatId] = { category: 'massage', serviceKey: 'massage', step: 'search_services' };
+        bot.editMessageText('💆 <b>Масаж</b>\n\nЯкий масаж вас цікавить?\n\n<i>Наприклад: антицелюлітний, лімфодренаж, розслаблюючий</i>',
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      [{ text: '📋 Показати всі', callback_data: 'show_all_massage' }],
+                      [{ text: '🔙 Назад', callback_data: 'start_booking' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'show_all_massage') {
         showMassageServices(chatId, messageId);
         return;
     }
@@ -497,7 +649,20 @@ bot.on('callback_query', async (query) => {
     // ============ AQUASPHERA CATEGORY ============
     
     if (dataCB === 'cat_aquasphera') {
-        userSessions[chatId] = { category: 'aquasphera', step: 'aquasphera_service' };
+        userSessions[chatId] = { category: 'aquasphera', serviceKey: 'aquasphera', step: 'search_services' };
+        bot.editMessageText('🌊 <b>Ендосфера терапія</b>\n\nЯка процедура вас цікавить?\n\n<i>Наприклад: ендосфера, тіло, обличчя</i>',
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      [{ text: '📋 Показати всі', callback_data: 'show_all_aqua' }],
+                      [{ text: '🔙 Назад', callback_data: 'start_booking' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'show_all_aqua') {
         showAquaspheraServices(chatId, messageId);
         return;
     }
@@ -543,8 +708,37 @@ bot.on('callback_query', async (query) => {
     if (dataCB === 'confirm_booking') {
         if (!session) return;
         
-        const { category, serviceIndex, workerId, name, phone, datetime } = session;
-        const services = adminsData.services[session.serviceKey] || [];
+        const { category, serviceIndex, workerId, name, phone, datetime, selectedZones, serviceKey } = session;
+        
+        if (category === 'laser' && selectedZones && selectedZones.length > 0) {
+            const workers = adminsData.categories.laser?.workers || [];
+            const worker = workers.find(w => w.id === workerId) || workers[0];
+            
+            let totalPrice = 0;
+            let zonesText = '';
+            
+            selectedZones.forEach(z => {
+                zonesText += `📍 ${z.name} - ${z.price}\n`;
+                totalPrice += parseInt(String(z.price).replace(/\s/g, ''));
+            });
+            
+            const result = await createAltegioBooking(name, phone, 111125, worker.altegio_staff_id, datetime);
+            
+            if (result.success) {
+                bot.editMessageText(`✅ <b>Запис створено!</b>\n\n👤 ${name}\n📱 ${phone}\n\n${zonesText}💰 <b>Загальна вартість: ${totalPrice} грн</b>\n👩‍⚕️ ${worker.name}\n🕐 ${datetime}\n\n🎁 Дякуємо за запис! Чекаємо на вас!`,
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+                      reply_markup: { inline_keyboard: [[{ text: '🏠 Головне меню', callback_data: 'back_main' }]] } });
+            } else {
+                bot.editMessageText(`⚠️ <b>Помилка:</b> ${result.error}`,
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+                      reply_markup: { inline_keyboard: [[{ text: '📞 Зв\'язатися', url: 'https://t.me/synergy_lviv' }]] } });
+            }
+            
+            delete userSessions[chatId];
+            return;
+        }
+        
+        const services = adminsData.services[serviceKey] || [];
         const workers = adminsData.categories[category]?.workers || [];
         
         const service = services[serviceIndex] || { name: '?', alteg: 123456 };
@@ -575,9 +769,12 @@ bot.on('message', async (msg) => {
     
     const chatId = msg.chat.id;
     const text = msg.text;
-    const session = userSessions[chatId];
     
-    if (!session) return;
+    if (!userSessions[chatId]) {
+        userSessions[chatId] = {};
+    }
+    
+    const session = userSessions[chatId];
     
     // ============ AI QUESTION MODE ============
     
@@ -661,47 +858,120 @@ bot.on('message', async (msg) => {
         return;
     }
     
-    // ============ LASER ZONES INPUT ============
+    // ============ SEARCH SERVICES ============
     
-    if (session.step === 'laser_enter_zones') {
+    if (session.step === 'search_services') {
+        const userText = text.toLowerCase();
         const gender = session.gender || 'woman';
+        const services = adminsData.services[`laser_${gender}`] || [];
         
-        bot.sendMessage(chatId, '🔍 Аналізую ваш запит...', { parse_mode: 'HTML' });
+        const keywordMap = {
+            'пахв': [0, 3], 'підпах': [0, 3],
+            'бікіні': [14, 15, 16], 'глибок': [16],
+            'ноги': [11, 12], 'ног': [11, 12],
+            'стегн': [23], 'гомілк': [10, 11],
+            'руки': [6, 7], 'рук': [6, 7],
+            'плеч': [1, 6], 'живіт': [5],
+            'поперек': [2], 'сідниц': [8, 9],
+            'шия': [17], 'обличч': [18, 19, 20, 21, 22],
+            'верхня губ': [21, 22], 'губа': [21, 22],
+            'підборідд': [20], 'декольт': [4], 'груди': [4]
+        };
         
-        const matches = await matchLaserZones(text, gender);
+        let matchedIndices = new Set();
+        for (const [keyword, indices] of Object.entries(keywordMap)) {
+            if (userText.includes(keyword)) {
+                indices.forEach(i => matchedIndices.add(i));
+            }
+        }
         
-        if (!matches || matches.length === 0) {
-            bot.sendMessage(chatId, '😕 На жаль, не вдалося знайти відповідні зони. Спробуйте обрати зі списку:',
-                { parse_mode: 'HTML',
-                  reply_markup: {
-                      inline_keyboard: [
-                          [{ text: '📋 Обрати зі списку', callback_data: `laser_pick_${gender}` }],
-                          [{ text: '🔙 Назад', callback_data: 'cat_laser' }]
-                      ]
-                  }
-                });
+        const matches = Array.from(matchedIndices).slice(0, 5).map(i => ({
+            index: i,
+            name: services[i]?.name,
+            price: services[i]?.price,
+            time: services[i]?.time
+        })).filter(m => m.name);
+        
+        if (matches.length === 0) {
+            bot.sendMessage(chatId, '😕 Не знайшли відповідних зон. Оберіть зі списку:',
+                { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '📋 Показати всі', callback_data: `laser_pick_${gender}` }]] } });
             return;
         }
         
-        const services = adminsData.services[`laser_${gender}`] || [];
-        
-        let msgText = '🔍 <b>Знайдено відповідні зони:</b>\n\n';
+        let msgText = '🔍 <b>Знайдено:</b>\n\n';
         const keyboard = [];
         
         matches.forEach((m, i) => {
-            const service = services[m.index];
-            if (service) {
-                msgText += `${i + 1}. <b>${service.name}</b>\n   💰 ${service.price}  |  ⏱ ${service.time}\n\n`;
-                keyboard.push([{ text: `${service.name}`, callback_data: `laser_s_${gender}_${m.index}` }]);
-            }
+            msgText += `${i + 1}. ${m.name} - ${m.price}\n`;
+            keyboard.push([{ text: `${m.name}`, callback_data: `laser_s_${gender}_${m.index}` }]);
         });
         
-        keyboard.push([{ text: '📋 Показати всі зони', callback_data: `laser_pick_${gender}` }]);
-        keyboard.push([{ text: '🔙 Назад', callback_data: 'cat_laser' }]);
+        keyboard.push([{ text: '📋 Показати всі', callback_data: `laser_pick_${gender}` }]);
         
         bot.sendMessage(chatId, msgText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
-        
         session.step = 'laser_service';
+        return;
+    }
+    
+    // ============ SEARCH OTHER SERVICES ============
+    
+    if (session.step === 'search_services' && session.category !== 'laser') {
+        const userText = text.toLowerCase();
+        const serviceKey = session.serviceKey;
+        const services = adminsData.services[serviceKey] || [];
+        
+        const keywordMaps = {
+            cosmetology: {
+                'чистк': [0, 1, 2, 3], 'пилінг': [4, 5, 6], 'масаж': [7, 8],
+                'обличч': [0, 1, 2, 3, 7, 8], 'спин': [9], 'шия': [10],
+                'aquapure': [11], 'hydra': [11]
+            },
+            massage: {
+                'антицелюліт': [0], 'целюліт': [0], 'лімфодренаж': [1],
+                'лімф': [1], 'розслаб': [2], 'спортив': [3], 'масаж': [0, 1, 2, 3, 4]
+            },
+            aquasphera: {
+                'ендосфера': [0, 1], 'тіло': [0, 1], 'обличч': [2],
+                'лице': [2], 'комплекс': [3]
+            }
+        };
+        
+        const keywordMap = keywordMaps[serviceKey] || {};
+        let matchedIndices = new Set();
+        
+        for (const [keyword, indices] of Object.entries(keywordMap)) {
+            if (userText.includes(keyword)) {
+                indices.forEach(i => matchedIndices.add(i));
+            }
+        }
+        
+        const matches = Array.from(matchedIndices).slice(0, 5).map(i => ({
+            index: i,
+            name: services[i]?.name,
+            price: services[i]?.price,
+            time: services[i]?.time
+        })).filter(m => m.name);
+        
+        const callbackMap = { cosmetology: 'cosmo_s_', massage: 'massage_s_', aquasphera: 'aqua_s_' };
+        const showAllMap = { cosmetology: 'show_all_cosmo', massage: 'show_all_massage', aquasphera: 'show_all_aqua' };
+        
+        if (matches.length === 0) {
+            bot.sendMessage(chatId, '😕 Не знайшли відповідних процедур. Оберіть зі списку:',
+                { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '📋 Показати всі', callback_data: showAllMap[serviceKey] }]] } });
+            return;
+        }
+        
+        let msgText = '🔍 <b>Знайдено:</b>\n\n';
+        const keyboard = [];
+        
+        matches.forEach((m, i) => {
+            msgText += `${i + 1}. ${m.name} - ${m.price}\n`;
+            keyboard.push([{ text: `${m.name}`, callback_data: callbackMap[serviceKey] + m.index }]);
+        });
+        
+        keyboard.push([{ text: '📋 Показати всі', callback_data: showAllMap[serviceKey] }]);
+        
+        bot.sendMessage(chatId, msgText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
         return;
     }
     
@@ -727,6 +997,35 @@ bot.on('message', async (msg) => {
     
     if (session.step === 'enter_datetime') {
         session.datetime = text;
+        
+        if (session.category === 'laser' && session.selectedZones && session.selectedZones.length > 0) {
+            const selectedZones = session.selectedZones;
+            let totalPrice = 0;
+            let zonesText = '';
+            
+            selectedZones.forEach(z => {
+                zonesText += `📍 ${z.name} - ${z.price}\n`;
+                totalPrice += parseInt(String(z.price).replace(/\s/g, ''));
+            });
+            
+            const workers = adminsData.categories.laser?.workers || [];
+            const worker = workers.find(w => w.id === session.workerId) || { name: '?' };
+            
+            bot.sendMessage(chatId,
+                `📋 <b>Перевірте дані:</b>\n\n👤 ${session.name}\n📱 ${session.phone}\n\n${zonesText}💰 <b>Загальна вартість: ${totalPrice} грн</b>\n👩‍⚕️ ${worker.name}\n🕐 ${session.datetime}\n\n✅ <b>Все вірно?</b>`,
+                { parse_mode: 'HTML',
+                  reply_markup: {
+                      inline_keyboard: [
+                          [{ text: '✅ Підтвердити', callback_data: 'confirm_booking' }],
+                          [{ text: '❌ Скасувати', callback_data: 'back_main' }]
+                      ]
+                  }
+                }
+            );
+            
+            session.step = 'confirm';
+            return;
+        }
         
         const services = adminsData.services[session.serviceKey] || [];
         const workers = adminsData.categories[session.category]?.workers || [];
