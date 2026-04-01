@@ -74,7 +74,7 @@ async function answerAI(question, category) {
     return 'Для детальної інформації зателефонуйте нам! 📞 ' + data.contact.phone;
 }
 
-async function createAltegioBooking(name, phone, serviceId, staffId, datetime) {
+async function createAltegioBooking(name, phone, serviceIds, staffId, datetime) {
     if (!ALTEGIO_API_KEY) return { success: false, error: 'No API key' };
     try {
         const response = await axios.post(
@@ -82,7 +82,7 @@ async function createAltegioBooking(name, phone, serviceId, staffId, datetime) {
             {
                 client: { name, phone },
                 staff_id: staffId,
-                services: [{ id: serviceId }],
+                services: Array.isArray(serviceIds) ? serviceIds.map(id => ({ id })) : [{ id: serviceIds }],
                 datetime: datetime,
                 save_if_busy: true
             },
@@ -371,7 +371,7 @@ bot.on('callback_query', async (query) => {
         
         const existingIndex = userSessions[chatId].selectedZones.findIndex(z => z.index === idx);
         if (existingIndex === -1) {
-            userSessions[chatId].selectedZones.push({ index: idx, name: service.name, price: service.price, time: service.time });
+            userSessions[chatId].selectedZones.push({ index: idx, name: service.name, price: service.price, time: service.time, altegio_id: service.altegio_id });
         }
         
         userSessions[chatId].serviceKey = `laser_${gender}`;
@@ -605,12 +605,12 @@ bot.on('callback_query', async (query) => {
     // ============ MASSAGE CATEGORY ============
     
     if (dataCB === 'cat_massage') {
-        userSessions[chatId] = { category: 'massage', serviceKey: 'massage', step: 'search_services' };
-        bot.editMessageText('💆 <b>Масаж</b>\n\nЯкий масаж вас цікавить?\n\n<i>Наприклад: антицелюлітний, лімфодренаж, розслаблюючий</i>',
+        userSessions[chatId] = { category: 'massage', step: 'massage_offer' };
+        bot.editMessageText('💆 <b>Масаж</b>\n\nВас зацікавила наша спеціальна пропозиція на масаж?',
             { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
               reply_markup: {
                   inline_keyboard: [
-                      [{ text: '📋 Показати всі', callback_data: 'show_all_massage' }],
+                      [{ text: '✅ Так', callback_data: 'massage_offer_yes' }],
                       [{ text: '🔙 Назад', callback_data: 'start_booking' }]
                   ]
               }
@@ -618,8 +618,63 @@ bot.on('callback_query', async (query) => {
         return;
     }
     
-    if (dataCB === 'show_all_massage') {
-        showMassageServices(chatId, messageId);
+    if (dataCB === 'massage_offer_yes') {
+        userSessions[chatId].step = 'massage_exp';
+        bot.editMessageText('💆 <b>Масаж</b>\n\nЧи робили Ви раніше масаж?',
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      [{ text: '✅ Так, робила', callback_data: 'massage_exp_yes' }],
+                      [{ text: '❌ Ні, вперше', callback_data: 'massage_exp_no' }],
+                      [{ text: '🔙 Назад', callback_data: 'cat_massage' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'massage_exp_yes' || dataCB === 'massage_exp_no') {
+        userSessions[chatId].step = 'massage_type';
+        bot.editMessageText('💆 <b>Масаж</b>\n\nЯкий тип масажу вас цікавить?',
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      [{ text: '🤲 Ручний масаж', callback_data: 'massage_type_hand' }],
+                      [{ text: '🌊 Ендосфера терапія', callback_data: 'massage_type_endo' }],
+                      [{ text: '🔙 Назад', callback_data: 'massage_offer_yes' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'massage_type_hand') {
+        userSessions[chatId].step = 'search_services';
+        userSessions[chatId].serviceKey = 'massage';
+        bot.editMessageText('💆 <b>Ручний Масаж</b>\n\nЯкий масаж вас цікавить?\n\n<i>Наприклад: антицелюлітний, лімфодренажний, спортивний...</i>',
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      [{ text: '📋 Показати всі', callback_data: 'show_all_massage' }],
+                      [{ text: '🔙 Назад', callback_data: 'massage_type' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'massage_type_endo') {
+        userSessions[chatId].step = 'search_services';
+        userSessions[chatId].serviceKey = 'aquasphera';
+        bot.editMessageText('🌊 <b>Ендосфера терапія</b>\n\nЯка процедура вас цікавить?\n\n<i>Наприклад: ендосфера, тіло, обличчя...</i>',
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      [{ text: '📋 Показати всі', callback_data: 'show_all_aqua' }],
+                      [{ text: '🔙 Назад', callback_data: 'massage_type' }]
+                  ]
+              }
+            });
         return;
     }
     
@@ -629,20 +684,111 @@ bot.on('callback_query', async (query) => {
         const service = services[idx];
         if (!service) return;
         
-        userSessions[chatId].serviceIndex = idx;
+        if (!userSessions[chatId].selectedZones) {
+            userSessions[chatId].selectedZones = [];
+        }
+        
+        const existingIndex = userSessions[chatId].selectedZones.findIndex(z => z.index === idx);
+        if (existingIndex === -1) {
+            userSessions[chatId].selectedZones.push({ index: idx, name: service.name, price: service.price, time: service.time, altegio_id: service.altegio_id, description: service.description });
+        }
+        
         userSessions[chatId].serviceKey = 'massage';
-        userSessions[chatId].step = 'massage_worker';
         
-        const workers = adminsData.categories.massage?.workers || [];
-        const keyboard = workers.map(w => 
-            [{ text: `${w.name}`, callback_data: `worker_${w.id}` }]
-        );
-        keyboard.push([{ text: '❓ Задати питання', callback_data: 'ask_ai' }]);
-        keyboard.push([{ text: '🔙 Інша процедура', callback_data: 'cat_massage' }]);
+        const selectedZones = userSessions[chatId].selectedZones;
+        let totalPrice = 0;
         
-        bot.editMessageText(`✅ <b>${service.name}</b>\n💰 ${service.price}\n⏱ ${service.time}\n\nОберіть спеціаліста:`,
+        let msgText = '📍 <b>Обрані процедури:</b>\n\n';
+        const keyboard = [];
+        
+        selectedZones.forEach((z, i) => {
+            msgText += `${i + 1}. ${z.name} - ${z.price}\n`;
+            totalPrice += parseInt(String(z.price).replace(/\s/g, ''));
+            keyboard.push([{ text: `❌ ${z.name}`, callback_data: `massage_remove_${i}` }]);
+        });
+        
+        msgText += `\n💰 <b>Загальна вартість: ${totalPrice} грн</b>`;
+        
+        keyboard.push([{ text: '➕ Додати ще процедуру', callback_data: 'massage_pick_more' }]);
+        keyboard.push([{ text: '✅ Продовжити', callback_data: 'massage_zones_done' }]);
+        
+        bot.editMessageText(msgText,
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
+        return;
+    }
+    
+    if (dataCB.startsWith('massage_remove_')) {
+        const idx = parseInt(dataCB.replace('massage_remove_', ''));
+        
+        if (userSessions[chatId].selectedZones && userSessions[chatId].selectedZones[idx]) {
+            userSessions[chatId].selectedZones.splice(idx, 1);
+        }
+        
+        const selectedZones = userSessions[chatId].selectedZones || [];
+        
+        if (selectedZones.length === 0) {
+            bot.editMessageText('📍 <b>Обрані процедури:</b>\n\nНічого не обрано',
+                { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+                  reply_markup: { inline_keyboard: [[{ text: '➕ Обрати процедури', callback_data: 'massage_pick_more' }]] } });
+            return;
+        }
+        
+        let totalPrice = 0;
+        let msgText = '📍 <b>Обрані процедури:</b>\n\n';
+        const keyboard = [];
+        
+        selectedZones.forEach((z, i) => {
+            msgText += `${i + 1}. ${z.name} - ${z.price}\n`;
+            totalPrice += parseInt(String(z.price).replace(/\s/g, ''));
+            keyboard.push([{ text: `❌ ${z.name}`, callback_data: `massage_remove_${i}` }]);
+        });
+        
+        msgText += `\n💰 <b>Загальна вартість: ${totalPrice} грн</b>`;
+        
+        keyboard.push([{ text: '➕ Додати ще процедуру', callback_data: 'massage_pick_more' }]);
+        keyboard.push([{ text: '✅ Продовжити', callback_data: 'massage_zones_done' }]);
+        
+        bot.editMessageText(msgText,
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
+        return;
+    }
+    
+    if (dataCB === 'massage_zones_done') {
+        const selectedZones = userSessions[chatId].selectedZones || [];
+        let totalPrice = 0;
+        
+        selectedZones.forEach(z => totalPrice += parseInt(String(z.price).replace(/\s/g, '')));
+        
+        bot.editMessageText(`💆 <b>Вартість даного комплексу: ${totalPrice} грн</b>\n\nОберіть спеціаліста:`,
             { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
-              reply_markup: { inline_keyboard: keyboard } });
+              reply_markup: {
+                  inline_keyboard: [
+                      ...(adminsData.categories.massage?.workers || []).map(w => 
+                          [{ text: w.name, callback_data: `worker_${w.id}` }]
+                      ),
+                      [{ text: '🔙 Назад', callback_data: 'massage_zones_done' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'massage_pick_more') {
+        userSessions[chatId].step = 'search_services';
+        bot.editMessageText('💆 <b>Масаж</b>\n\nЯкий ще масаж вас цікавить?\n\n<i>Наприклад: антицелюлітний, лімфодренажний, спортивний...</i>',
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+              reply_markup: {
+                  inline_keyboard: [
+                      [{ text: '📋 Показати всі', callback_data: 'show_all_massage' }],
+                      [{ text: '🔙 Назад', callback_data: 'massage_zones_done' }]
+                  ]
+              }
+            });
+        return;
+    }
+    
+    if (dataCB === 'show_all_massage') {
+        showMassageServices(chatId, messageId);
         return;
     }
     
@@ -722,7 +868,8 @@ bot.on('callback_query', async (query) => {
                 totalPrice += parseInt(String(z.price).replace(/\s/g, ''));
             });
             
-            const result = await createAltegioBooking(name, phone, 111125, worker.altegio_staff_id, datetime);
+            const serviceIds = selectedZones.map(z => z.altegio_id || 111125);
+            const result = await createAltegioBooking(name, phone, serviceIds, worker.altegio_staff_id, datetime);
             
             if (result.success) {
                 bot.editMessageText(`✅ <b>Запис створено!</b>\n\n👤 ${name}\n📱 ${phone}\n\n${zonesText}💰 <b>Загальна вартість: ${totalPrice} грн</b>\n👩‍⚕️ ${worker.name}\n🕐 ${datetime}\n\n🎁 Дякуємо за запис! Чекаємо на вас!`,
@@ -927,8 +1074,13 @@ bot.on('message', async (msg) => {
                 'aquapure': [11], 'hydra': [11]
             },
             massage: {
-                'антицелюліт': [0], 'целюліт': [0], 'лімфодренаж': [1],
-                'лімф': [1], 'розслаб': [2], 'спортив': [3], 'масаж': [0, 1, 2, 3, 4]
+                'антицелюліт': [0], 'целюліт': [0],
+                'підлітк': [1],
+                'спортив': [2, 3],
+                'лімфодренаж': [4, 5], 'лімф': [4, 5], 'набряк': [4, 5],
+                'авторськ': [6], 'секретн': [6],
+                'тріо': [7], 'шийно': [7], 'комірцев': [7],
+                'масаж': [0, 1, 2, 3, 4, 5, 6, 7]
             },
             aquasphera: {
                 'ендосфера': [0, 1], 'тіло': [0, 1], 'обличч': [2],
