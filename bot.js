@@ -2,9 +2,28 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const config = require('./config');
 
-const bot = new TelegramBot(config.BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(config.BOT_TOKEN, {
+    polling: {
+        interval: 300,
+        autoStart: true,
+        params: { timeout: 10 }
+    }
+});
 
-const { data, adminsData, ALTEGIO_URL, ALTEGIO_API_KEY, ALTEGIO_LOCATION_ID } = config;
+// Per-user callback lock to prevent rapid button presses
+const userLocks = new Map();
+
+function acquireLock(chatId) {
+    if (userLocks.has(chatId)) return false;
+    userLocks.set(chatId, true);
+    return true;
+}
+
+function releaseLock(chatId) {
+    userLocks.delete(chatId);
+}
+
+const { data, adminsData, ALTEGIO_URL, ALTEGIO_API_KEY, ALTEGIO_LOCATION_ID, GOOGLE_API_KEY, GOOGLE_LOCATION_ID } = config;
 
 const userSessions = {};
 
@@ -77,23 +96,64 @@ async function answerAI(question, category) {
 async function createAltegioBooking(name, phone, serviceIds, staffId, datetime) {
     if (!ALTEGIO_API_KEY) return { success: false, error: 'No API key' };
     try {
+        let dateStr = datetime;
+        const match = datetime.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})\s*[оo]?\s*(\d{1,2}):(\d{2})/);
+        if (match) {
+            dateStr = `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')} ${match[4].padStart(2, '0')}:${match[5]}:00`;
+        }
+        
+        const serviceId = Array.isArray(serviceIds) ? serviceIds[0] : serviceIds;
+        
         const response = await axios.post(
-            `https://n816358.alteg.io/api/v2/records/${ALTEGIO_LOCATION_ID}`,
+            `https://n816358.alteg.io/api/v2/companies/${ALTEGIO_LOCATION_ID}/activities`,
             {
-                client: { name, phone },
                 staff_id: staffId,
-                services: Array.isArray(serviceIds) ? serviceIds.map(id => ({ id })) : [{ id: serviceIds }],
-                datetime: datetime,
-                save_if_busy: true
+                service_id: serviceId,
+                resource_instance_ids: [],
+                label_ids: [],
+                date: dateStr,
+                length: 3600,
+                capacity: 1,
+                comment: name + ' | ' + phone
             },
             {
-                headers: { Authorization: `Bearer ${ALTEGIO_API_KEY}`, 'Content-Type': 'application/json' },
+                headers: { 
+                    Authorization: `Bearer ${ALTEGIO_API_KEY}`, 
+                    'Content-Type': 'application/json',
+                    Accept: 'application/vnd.alteg.v2+json'
+                },
                 timeout: 15000
             }
         );
         return { success: true, data: response.data };
     } catch (e) {
-        return { success: false, error: e.message };
+        return { success: false, error: e.response?.data?.meta?.message || e.message };
+    }
+}
+
+
+async function fetchGoogleReviews() {
+    if (!GOOGLE_API_KEY || !GOOGLE_LOCATION_ID) {
+        return data.reviews;
+    }
+    try {
+        const response = await axios.get(
+            'https://mybusiness.googleapis.com/v1/accounts/-/locations/' + GOOGLE_LOCATION_ID + '/reviews',
+            {
+                headers: { Authorization: 'Bearer ' + GOOGLE_API_KEY },
+                params: { pageSize: 10, orderBy: 'UPDATE_TIME desc' }
+            }
+        );
+        const reviews = response.data.reviews || [];
+        return reviews.map(r => ({
+            name: r.author.displayName || 'Клієнт',
+            service: '',
+            text: r.comment || '',
+            rating: r.starRating || 5
+        }));
+    } catch (e) {
+        console.log('Google Reviews error:', e.message);
+        return data.reviews;
     }
 }
 
@@ -112,9 +172,12 @@ bot.on('callback_query', async (query) => {
     const messageId = query.message.message_id;
     const dataCB = query.data;
     
-    await bot.answerCallbackQuery(query.id);
+    if (!acquireLock(chatId)) return;
     
-    if (!userSessions[chatId]) {
+    try {
+        await bot.answerCallbackQuery(query.id);
+        
+        if (!userSessions[chatId]) {
         userSessions[chatId] = {};
     }
     
@@ -182,10 +245,18 @@ bot.on('callback_query', async (query) => {
     }
     
     if (dataCB === 'reviews') {
-        let text = '⭐ <b>Відгуки</b>\n\n';
-        data.reviews.forEach(r => {
-            text += `💬 <b>${r.name}</b> — ${r.service}\n   «${r.text}»\n\n`;
+        bot.editMessageText('⏳ Завантажуємо відгуки з Google Maps...', 
+            { chat_id: chatId, message_id: messageId, parse_mode: 'HTML' });
+        
+        const reviews = await fetchGoogleReviews();
+        
+        let text = '⭐ <b>Відгуки з Google Maps</b>\n\n';
+        reviews.slice(0, 10).forEach(r => {
+            const stars = '⭐'.repeat(r.rating || 5);
+            text += `💬 <b>${r.name}</b> ${stars}\n   «${r.text}»\n\n`;
         });
+        text += '🔗 <a href="https://g.page/synergy-lviv">Більше відгуків на Google Maps</a>';
+        
         bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
             reply_markup: { inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'back_main' }]] } });
         return;
@@ -905,6 +976,9 @@ bot.on('callback_query', async (query) => {
         
         delete userSessions[chatId];
         return;
+    }
+    } finally {
+        releaseLock(chatId);
     }
 });
 

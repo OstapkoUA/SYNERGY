@@ -1,5 +1,13 @@
 node_modules/
 .env
-package-lock.json
 *.log
+*.bak
+bot.js.bak
+bot_temp.js
+bot_original.js
+update.js
+fix_*.js
+dist/
+build/
 .DS_Store
+Thumbs.db

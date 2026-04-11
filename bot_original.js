@@ -133,7 +133,7 @@ bot.on('callback_query', async (query) => {
                   inline_keyboard: [
                       [{ text: '🔴 Лазерна Епіляція', callback_data: 'cat_laser' }],
                       [{ text: '💄 Косметологія', callback_data: 'cat_cosmetology' }],
-                      [{ text: '💆 Масаж', callback_data: 'cat_massage' }],
+                      [{ text: '💆 Ручний Масаж', callback_data: 'cat_massage' }],
                       [{ text: '🌊 Ендосфера', callback_data: 'cat_aquasphera' }],
                       [{ text: '🔙 На головну', callback_data: 'back_main' }]
                   ]

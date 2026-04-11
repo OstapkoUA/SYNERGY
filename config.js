@@ -19,6 +19,8 @@ module.exports = {
     ALTEGIO_API_KEY: process.env.ALTEGIO_API_KEY || '',
     ALTEGIO_URL: process.env.ALTEGIO_BOOKING_URL || 'https://n816358.alteg.io/company/766796/personal/menu?o=',
     ALTEGIO_LOCATION_ID: '766796',
+    GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || '',
+    GOOGLE_LOCATION_ID: process.env.GOOGLE_LOCATION_ID || '',
     data: loadData(),
     adminsData: loadAdmins(),
     ADMINS_FILE,
